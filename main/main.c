@@ -50,8 +50,8 @@ spi_device_interface_config_t interface_config =
 	.dummy_bits = 0,
 	.mode = 0,
 	.spics_io_num = CC1120_CS,
-	.clock_speed_hz = SPI_MASTER_FREQ_8M,
-	.flags = SPI_DEVICE_HALFDUPLEX,
+	.clock_speed_hz = (APB_CLK_FREQ/20),
+	.flags = 0,
 	.queue_size = 1
 
 };
@@ -59,7 +59,7 @@ spi_device_interface_config_t interface_config =
 spi_device_handle_t spi;
 
 // Private CC1120 Driver Functions
-esp_err_t cc1120_gpio_init(void)
+void cc1120_gpio_init(void)
 {
 	gpio_config_t reset_pin_config =
 	{
@@ -83,20 +83,18 @@ esp_err_t cc1120_gpio_init(void)
 
 	gpio_set_level(CC1120_RESET, 1);
 
-	return ESP_OK;
 }
 
-esp_err_t cc1120_spi_init(void)
+void cc1120_spi_init(void)
 {
 	esp_err_t ret;
 	ret = spi_bus_initialize(VSPI_HOST, &bus_config, 1);	// this uses DMA channel 1
 	ESP_ERROR_CHECK(ret);
 	ret = spi_bus_add_device(VSPI_HOST, &interface_config, &spi);
 	ESP_ERROR_CHECK(ret);
-	return ESP_OK;
 }
 
-esp_err_t cc1120_spi_write_byte(uint16_t addr, uint8_t data)
+void cc1120_spi_write_byte(uint16_t addr, uint8_t data)
 {
 	esp_err_t ret;
 	spi_transaction_t tx_trans =
@@ -126,10 +124,9 @@ esp_err_t cc1120_spi_write_byte(uint16_t addr, uint8_t data)
 		ret = spi_device_transmit(spi, &tx_trans);
 	}
 	ESP_ERROR_CHECK(ret);
-	return ESP_OK;
 }
 
-esp_err_t cc1120_spi_write_bytes(uint16_t addr, uint8_t* data, uint8_t len)
+void cc1120_spi_write_bytes(uint16_t addr, uint8_t* data, uint8_t len)
 {
 	esp_err_t ret;
 	spi_transaction_t tx_trans =
@@ -155,19 +152,18 @@ esp_err_t cc1120_spi_write_bytes(uint16_t addr, uint8_t* data, uint8_t len)
 		ret = spi_device_transmit(spi, &tx_trans);
 	}
 	ESP_ERROR_CHECK(ret);
-	return ESP_OK;
 }
 
-esp_err_t cc1120_spi_read_byte(uint16_t addr, uint8_t* data)
+void cc1120_spi_read_byte(uint16_t addr, uint8_t* data)
 {
 	esp_err_t ret;
 	spi_transaction_t rx_trans =
 	{
-		.flags = SPI_TRANS_USE_RXDATA,
 		.cmd = CC1120_READ_BIT,
 		.addr = addr,
 		.length = 8,
 		.rxlength = 8,
+		.rx_buffer = data
 	};
 	if ((addr & 0xFF00) != 0) // read data with extended address in command field
 	{
@@ -185,11 +181,9 @@ esp_err_t cc1120_spi_read_byte(uint16_t addr, uint8_t* data)
 		ret = spi_device_transmit(spi, &rx_trans);
 	}
 	ESP_ERROR_CHECK(ret);
-	*data = rx_trans.rx_data[0];
-	return ESP_OK;
 }
 
-esp_err_t cc1120_spi_read_bytes(uint16_t addr, uint8_t* data, uint8_t len)
+void cc1120_spi_read_bytes(uint16_t addr, uint8_t* data, uint8_t len)
 {
 	esp_err_t ret;
 	spi_transaction_t rx_trans =
@@ -216,22 +210,29 @@ esp_err_t cc1120_spi_read_bytes(uint16_t addr, uint8_t* data, uint8_t len)
 		ret = spi_device_transmit(spi, &rx_trans);
 	}
 	ESP_ERROR_CHECK(ret);
-	return ESP_OK;
 }
 
-esp_err_t cc1120_spi_strobe(uint8_t cmd)
+rf_status_t cc1120_spi_strobe(uint8_t cmd)
 {
 	esp_err_t ret;
-	spi_transaction_t strobe_trans =
+	uint8_t temp=0;
+	spi_transaction_t rx_trans =
 	{
-		.cmd = CC1120_WRITE_BIT,
-		.addr = cmd,
-		.length = 0,
+		.flags = (SPI_TRANS_USE_TXDATA | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR),
+		.length = 8,
+		.rxlength = 8,
+		.rx_buffer = &temp,
+		.tx_data[0] = cmd
 	};
-	ret = spi_device_transmit(spi, &strobe_trans);
+	spi_transaction_ext_t rx_trans_ext =
+	{
+			.base = rx_trans,
+			.command_bits = 0,
+			.address_bits = 0
+	};
+	ret = spi_device_transmit(spi, (spi_transaction_t*)&rx_trans_ext);
 	ESP_ERROR_CHECK(ret);
-	return ESP_OK;
-
+	return (temp & 0xF0);
 }
 
 // Public CC1120 Driver Functions
@@ -268,19 +269,31 @@ esp_err_t cc1120_radio_init(void)
 void app_main()
 {
 	cc1120_radio_init();
-	printf("Hello\n");
-	uint8_t data;
-	// function test loop
+	uint8_t len, i;
+	len = sizeof(CW_SETTINGS) / sizeof(cc1120_reg_settings_t);
+
+	cc1120_spi_strobe(CC112X_SRES);
+
+	vTaskDelay(500/portTICK_PERIOD_MS);
+
+	//cc1120_spi_strobe(CC112X_SFSTXON);
+
+	vTaskDelay(500/portTICK_PERIOD_MS);
+
+	for (i=0;i<len;i++)
+	{
+		cc1120_spi_write_byte(CW_SETTINGS[i].addr, CW_SETTINGS[i].data);
+	}
+
+	vTaskDelay(500/portTICK_PERIOD_MS);
+
+
+	cc1120_spi_strobe(CC112X_STX);
+
 	while(1)
 	{
-		//cc1120_spi_write_byte(CC112X_PKT_CFG2, 0x0F);
-		//cc1120_spi_write_byte(CC112X_FS_CAL0, 0x0F);
-		cc1120_spi_read_byte(CC112X_PARTNUMBER, &data);
-		cc1120_spi_strobe(CC112X_STX);
-		vTaskDelay(30/portTICK_RATE_MS);
-		cc1120_spi_strobe(CC112X_SRX);
-		printf("data: %x\n", data);
-		//esp_task_wdt_reset();
-		vTaskDelay(1000/portTICK_RATE_MS);
+		vTaskDelay(10/portTICK_PERIOD_MS);
+		printf("Status: %x\n", cc1120_spi_strobe(CC112X_STX));
+		printf("Status: %x\n", cc1120_spi_strobe(CC112X_SNOP));
 	}
 }
