@@ -216,6 +216,7 @@
 #define CC112X_STATE_SETTLING           0x50
 #define CC112X_STATE_RXFIFO_ERROR       0x60
 #define CC112X_STATE_TXFIFO_ERROR       0x70
+#define CC112X_RDYn_BIT					BIT(7)
 
 /* FIFO Address */
 #define CC112X_FIFO						0x3F

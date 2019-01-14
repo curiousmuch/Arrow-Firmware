@@ -239,9 +239,29 @@ rf_status_t cc1120_spi_strobe(uint8_t cmd)
 // These function should have there own error codes as they're dependent upon the radio and
 // not the ESP32 :)
 
-esp_err_t cc1120_radio_reset(void)
+rf_status_t cc1120_radio_reset(void)
 {
-	return ESP_OK;
+	rf_status_t status;
+	uint8_t retry_count = 0;
+	cc1120_spi_strobe(CC112X_SRES);
+	status = cc1120_spi_strobe(CC112X_SNOP);
+
+	vTaskDelay(10 / portTICK_PERIOD_MS);
+
+	while((CC112X_RDYn_BIT & (status & 0x80)))
+	{
+		vTaskDelay(10 / portTICK_PERIOD_MS);
+		if (retry_count > 3)
+		{
+			// place error CC1120 timeout
+			printf("CC1120 Reset Failure\n");
+			break;
+		}
+		status = cc1120_spi_strobe(CC112X_SNOP);
+		retry_count++;
+	}
+	printf("%x\n", retry_count);
+	return status;
 }
 
 esp_err_t cc1120_radio_frequency(uint32_t freq)
@@ -259,41 +279,45 @@ esp_err_t cc1120_radio_power(uint8_t txPower)
 	return ESP_OK;
 }
 
-esp_err_t cc1120_radio_init(void)
+void cc1120_radio_init(const cc1120_reg_settings_t* rf_settings, uint8_t len)
 {
 	cc1120_gpio_init();
 	cc1120_spi_init();
-	return ESP_OK;
+
+	cc1120_radio_reset();
+
+	uint8_t i;
+
+	for (i=0;i<len;i++)
+	{
+		cc1120_spi_write_byte(rf_settings[i].addr, rf_settings[i].data);
+	}
 }
 
 void app_main()
 {
-	cc1120_radio_init();
-	uint8_t len, i;
-	len = sizeof(CW_SETTINGS) / sizeof(cc1120_reg_settings_t);
-
-	cc1120_spi_strobe(CC112X_SRES);
+	cc1120_radio_init(CW_SETTINGS, sizeof(CW_SETTINGS)/sizeof(cc1120_reg_settings_t));
 
 	vTaskDelay(500/portTICK_PERIOD_MS);
 
-	//cc1120_spi_strobe(CC112X_SFSTXON);
+	//cc1120_spi_write_byte()
 
-	vTaskDelay(500/portTICK_PERIOD_MS);
+	// write one byte into FIFO (quirk required for CC1120 to enter CW mode)
+	cc1120_spi_write_byte(CC112X_FIFO, 0x12);
 
-	for (i=0;i<len;i++)
-	{
-		cc1120_spi_write_byte(CW_SETTINGS[i].addr, CW_SETTINGS[i].data);
-	}
-
-	vTaskDelay(500/portTICK_PERIOD_MS);
-
-
+	// strobe TX command
 	cc1120_spi_strobe(CC112X_STX);
 
+	int8_t i=-64;
+
+	// very TX frequency via CFM register
 	while(1)
 	{
-		vTaskDelay(10/portTICK_PERIOD_MS);
-		printf("Status: %x\n", cc1120_spi_strobe(CC112X_STX));
-		printf("Status: %x\n", cc1120_spi_strobe(CC112X_SNOP));
+		vTaskDelay(50/portTICK_PERIOD_MS);
+		//printf("Status: %x\n", cc1120_spi_strobe(CC112X_STX));
+		cc1120_spi_write_byte(CC112X_CFM_TX_DATA_IN, i++);
+		//printf("Status: %x\n", cc1120_spi_strobe(CC112X_SNOP));
+		if (i == 65)
+			i = -64;
 	}
 }
