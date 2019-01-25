@@ -221,6 +221,20 @@
 /* FIFO Address */
 #define CC112X_FIFO						0x3F
 
+/* Data Structures */
 typedef uint8_t rf_status_t;
+
+typedef struct {
+	uint16_t addr;
+	uint8_t data;
+} cc1120_reg_settings_t;
+
+
+/* Public Functions */
+void cc1120_radio_init(const cc1120_reg_settings_t*, uint8_t);
+esp_err_t cc1120_radio_frequency(uint32_t);
+rf_status_t cc1120_radio_reset(void);
+esp_err_t cc1120_radio_sleep(void);
+void cc1120_radio_APRSTXPacket(void);
 
 #endif /* MAIN_CC1120_H_ */

@@ -12,11 +12,6 @@
 #include <stdint.h>
 #include "cc1120.h"
 
-typedef struct {
-	uint16_t addr;
-	uint8_t data;
-} cc1120_reg_settings_t;
-
 /* APRS Radio Configuration */
 // Address Config = No address check
 // Bit Rate = 6
@@ -34,7 +29,7 @@ typedef struct {
 // Symbol rate = 6
 // TX Power = 15
 // Whitening = false
-static const cc1120_reg_settings_t ARPS_SETTINGS[]=
+static const cc1120_reg_settings_t APRS_SETTINGS[]=
 {
   {CC112X_IOCFG3,            0xB0},
   {CC112X_IOCFG2,            0x06},
@@ -61,6 +56,7 @@ static const cc1120_reg_settings_t ARPS_SETTINGS[]=
   {CC112X_PKT_LEN,           0xFF},
   {CC112X_IF_MIX_CFG,        0x00},
   {CC112X_FREQOFF_CFG,       0x22},
+  {CC112X_CFM_DATA_CFG,      0x01},
   {CC112X_FREQ2,             0x6C},
   {CC112X_FREQ1,             0x4A},
   {CC112X_FREQ0,             0xE1},
@@ -82,9 +78,9 @@ static const cc1120_reg_settings_t ARPS_SETTINGS[]=
 
 /* 900MHz CW Configuration */
 // Address Config = No address check
-// Bit Rate = 1.2
+// Bit Rate = 0.825
 // Carrier Frequency = 915.000000
-// Deviation = 3.997803
+// Deviation = 5kHz
 // Device Address = 0
 // Manchester Enable = false
 // Modulation Format = 2-FSK
@@ -93,32 +89,37 @@ static const cc1120_reg_settings_t ARPS_SETTINGS[]=
 // Packet Length = 3
 // Packet Length Mode = Not supported
 // Performance Mode = High Performance
-// RX Filter BW = 25.000000
-// Symbol rate = 1.2
+// RX Filter BW = 15kHz
+// Symbol rate = 0.825
 // TX Power = 15
 // Whitening = false
-
 static const cc1120_reg_settings_t CW_SETTINGS[]=
 {
-  {CC112X_IOCFG3,            0xB0},
+  {CC112X_IOCFG3,            0x1e},
   {CC112X_IOCFG2,            0x08},
   {CC112X_IOCFG1,            0xB0},
   {CC112X_IOCFG0,            0x09},
   {CC112X_SYNC_CFG1,         0x0B},
+  {CC112X_DEVIATION_M,       0x48},
   {CC112X_DCFILT_CFG,        0x1C},
   {CC112X_PREAMBLE_CFG1,     0x00},
   {CC112X_IQIC,              0xC6},
-  {CC112X_CHAN_BW,           0x08},
+  {CC112X_CHAN_BW,           0x0D},
   {CC112X_MDMCFG0,           0x05},
+  {CC112X_SYMBOL_RATE2,      0x3B},
+  {CC112X_SYMBOL_RATE1,      0x08},
+  {CC112X_SYMBOL_RATE0,      0x9A},
   {CC112X_AGC_REF,           0x20},
   {CC112X_AGC_CS_THR,        0x19},
   {CC112X_AGC_CFG1,          0xA9},
+  {CC112X_AGC_CFG0,          0xCF},
   {CC112X_FIFO_CFG,          0x00},
   {CC112X_FS_CFG,            0x12},
   {CC112X_PKT_CFG2,          0x06},
   {CC112X_PKT_CFG1,          0x00},
   {CC112X_PKT_CFG0,          0x40},
   {CC112X_PA_CFG2,           0x3F},
+  {CC112X_PA_CFG0,           0x7E},
   {CC112X_IF_MIX_CFG,        0x00},
   {CC112X_FREQOFF_CFG,       0x22},
   {CC112X_CFM_DATA_CFG,      0x01},
