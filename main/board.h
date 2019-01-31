@@ -22,5 +22,8 @@
 #define CC1120_GPIO3 		34
 #define CC1120_GPIO3_RTC	4
 
+#define DEBUG_0 			2
+#define DEBUG_1				4
+
 
 #endif /* MAIN_BOARD_H_ */

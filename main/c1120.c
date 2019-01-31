@@ -13,6 +13,8 @@
 #include "cc1120.h"
 #include "cc1120_protocol.h"
 #include "board.h"
+#include "esp_task_wdt.h"
+
 
 #define CC1120_WRITE_BIT 	0
 #define CC1120_READ_BIT 	BIT(1)
@@ -51,7 +53,7 @@ void cc1120_gpio_init(void)
 {
 	gpio_config_t reset_pin_config =
 	{
-			.pin_bit_mask = (uint64_t)BIT64(CC1120_RESET),
+			.pin_bit_mask = (uint64_t)(BIT64(CC1120_RESET)),
 			.mode = GPIO_MODE_OUTPUT,
 			.pull_up_en = GPIO_PULLUP_DISABLE,
 			.pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -66,8 +68,19 @@ void cc1120_gpio_init(void)
 			.pull_down_en = GPIO_PULLDOWN_DISABLE,
 			.intr_type = GPIO_INTR_DISABLE
 	};
+	gpio_config_t debug_pin_config =
+	{
+			.pin_bit_mask = (uint64_t) (BIT64(DEBUG_0)|BIT64(DEBUG_1)),
+			.mode = GPIO_MODE_OUTPUT,
+			.pull_up_en = GPIO_PULLUP_DISABLE,
+			.pull_down_en = GPIO_PULLDOWN_DISABLE,
+			.intr_type = GPIO_INTR_DISABLE
+	};
+
 	gpio_config(&reset_pin_config);
 	gpio_config(&gpio_pin_config);
+	gpio_config(&debug_pin_config);
+
 
 	gpio_set_level(CC1120_RESET, 1);
 
@@ -273,7 +286,10 @@ esp_err_t cc1120_radio_power(uint8_t txPower)
 
 uint8_t packet_len = 0;
 uint8_t test_vector[] = {0x71, 0x01, 023, 0xAE, 0x75};
-uint8_t sample_count = 0;
+volatile uint8_t sample_count = 0;
+uint8_t toggle;
+uint8_t toggle2;
+uint8_t prev_sample_count = 0;
 uint32_t tx_symbol = 0;
 uint8_t prev_tx_symbol = 0;
 
@@ -281,48 +297,89 @@ uint8_t prev_tx_symbol = 0;
 
 #define SAMPLE_FREQUENCY 13200
 #define DAC_MAX 64
-#define LUT_SIZE DAC_MAX*2
+#define LUT_SIZE 128
 
 DRAM_ATTR int8_t LUT[LUT_SIZE];
 
-int8_t phase_i = 0;
-float phase, delta_phi;
+int32_t phase_i = 0;
+volatile uint8_t new_sample = 0;
+
+float phase = 0.0f;
+float delta_phi = 0.0f;
 float const delta_phi_1 = (float) 1200 / SAMPLE_FREQUENCY * LUT_SIZE;
 float const delta_phi_2 = (float) 2200 / SAMPLE_FREQUENCY * LUT_SIZE;
 
 
+const uint8_t APRS_TEST_PACKET[] = {168,138,166,168, 64, 64,224,174,132,100,158,166,180,255,  3,240, 44, 84,
+									 104,101, 32,113,117,105, 99,107, 32, 98,114,111,119,110, 32,102,111,120,
+									  32,106,117,109,112,115, 32,111,118,101,114, 32,116,104,101, 32,108, 97,
+									 122,121, 32,100,111,103, 33, 32, 32, 49, 32,111,102, 32, 52, 40,110};
+
+
+
+//const uint8_t APRS_TEST_PACKET[] = {0xFF, 0xFF, 0xFF};
+
 // The output needs to be continous phase.
 
-static void IRAM_ATTR cc1120_aprs_tx_isr(void* arg)
+typedef struct {
+	uint8_t one_count;
+	uint32_t sample_count;
+	uint32_t byte;
+	uint32_t packet_len;
+	uint8_t prev_bit;
+	uint8_t cur_bit;
+	uint8_t tone;
+} aprs_flags_t;
+
+aprs_flags_t DRAM_ATTR aprs_flags = {
+		.one_count = 0,
+		.sample_count = 0,
+		.byte = 0,
+		.packet_len = sizeof(APRS_TEST_PACKET)/sizeof(uint8_t),
+		.prev_bit = 0,
+		.cur_bit = 0,
+		.tone = 0
+};
+
+static void IRAM_ATTR LUT_lookup(void)
 {
-	if (tx_symbol)
+	if (aprs_flags.tone)
 		delta_phi = delta_phi_1;
 	else
 		delta_phi = delta_phi_2;
 
-    phase_i = (int8_t)phase;        // get integer part of our phase
-
-    cc1120_spi_write_byte(CC112X_CFM_TX_DATA_IN, LUT[phase_i]);
+    phase_i = (int32_t)phase;        // get integer part of our phase
 
     phase += delta_phi;              // increment phase
 
     if (phase >= (float)LUT_SIZE)    // handle wraparound
         phase -= (float)LUT_SIZE;
+}
 
-	sample_count++;
+static void IRAM_ATTR cc1120_aprs_tx_isr(void* arg)
+{
+    cc1120_spi_write_byte(CC112X_CFM_TX_DATA_IN, LUT[phase_i]);
+
+    sample_count++;
+    new_sample = 1;
+
+	toggle = toggle ^ 1;
+	gpio_set_level(DEBUG_1, toggle);
 }
 
 void cc1120_lut_init(void)
 {
 	int16_t i=0;
-	for (i=0; i<LUT_SIZE; i++)
+	for (i=0; i<LUT_SIZE; ++i)
 	{
 		LUT[i] = (int8_t)roundf(DAC_MAX * sinf(2.0f * M_PI * (float)i / LUT_SIZE));
+		//printf("%d,\n", LUT[i]);
 	}
 }
 
+
 // test function to generate APRS s1 or s2
-void cc1120_radio_APRSTXPacket(void)
+void IRAM_ATTR cc1120_radio_APRSTXPacket(void)
 {
 	// start CW transmission
 	cc1120_spi_write_byte(CC112X_FIFO, 0x12);
@@ -337,9 +394,77 @@ void cc1120_radio_APRSTXPacket(void)
 	// acquire SPI bus for fastest possible SPI transactions
 	spi_device_acquire_bus(spi, portMAX_DELAY);
 
-	// send Flag
-	// send Loaded Packet
-	// send Flag
+	/* Send 0's */
+
+	/* Send Flag */
+
+	/* Send Packet */
+	while(1)
+	{
+		int16_t i,j;
+		for (i=0;i<aprs_flags.packet_len;i++)
+		{
+			aprs_flags.byte = APRS_TEST_PACKET[i];
+			for(j=8;j>0;--j)
+			{
+				aprs_flags.cur_bit = aprs_flags.byte & 0x01;	// bool of first bit
+
+				// Zero Stuffing
+				if (aprs_flags.one_count == 5)
+				{
+					aprs_flags.tone = aprs_flags.tone ^ 1;
+					aprs_flags.one_count = 0;
+
+					// wait for symbol to be sent
+					while(sample_count < 11)
+					{
+						if ( new_sample )
+						{
+							LUT_lookup();
+							new_sample = 0;
+						}
+					}
+					toggle2 = toggle2 ^ 1;
+					gpio_set_level(DEBUG_0, toggle2);
+					sample_count = 0;
+				}
+
+				// NRZ-I Encoding
+				if (aprs_flags.cur_bit)
+				{
+					// do nothing
+					aprs_flags.one_count++;
+
+				}
+				else
+				{
+					aprs_flags.tone = aprs_flags.tone ^ 1; // switch tone
+					aprs_flags.one_count = 0;
+				}
+
+				aprs_flags.byte = (aprs_flags.byte >> 1);
+
+				while(sample_count < 11)	// wait for symbol to be sent
+				{
+					if ( new_sample )
+					{
+						LUT_lookup();
+						new_sample = 0;
+					}
+				}
+				toggle2 = toggle2 ^ 1;
+				gpio_set_level(DEBUG_0, toggle2);
+				sample_count = 0;
+				//printf("Symbol: %x\n", aprs_flags.cur_bit);
+			}
+		}
+		vTaskDelay(500/portTICK_PERIOD_MS);
+	}
+
+	/* Send CRC */
+
+	/* Send Flag */
+
 }
 
 void cc1120_radio_init(const cc1120_reg_settings_t* rf_settings, uint8_t len)
@@ -348,7 +473,8 @@ void cc1120_radio_init(const cc1120_reg_settings_t* rf_settings, uint8_t len)
 	cc1120_spi_init();
 	cc1120_lut_init();
 
-	cc1120_radio_reset();
+	cc1120_radio_reset();	gpio_set_level(CC1120_RESET, 1);
+
 
 	uint8_t i;
 
