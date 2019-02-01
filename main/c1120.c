@@ -377,6 +377,8 @@ void cc1120_lut_init(void)
 	}
 }
 
+#define PREAMBLE_LENGTH 20
+#define SUFFIX_LENGTH 1
 
 // test function to generate APRS s1 or s2
 void IRAM_ATTR cc1120_radio_APRSTXPacket(void)
@@ -394,18 +396,59 @@ void IRAM_ATTR cc1120_radio_APRSTXPacket(void)
 	// acquire SPI bus for fastest possible SPI transactions
 	spi_device_acquire_bus(spi, portMAX_DELAY);
 
-	/* Send 0's */
+	int16_t i,j;
 
-	/* Send Flag */
-
-	/* Send Packet */
 	while(1)
 	{
-		int16_t i,j;
+		// start CW transmission
+		cc1120_spi_write_byte(CC112X_FIFO, 0x12);
+		cc1120_spi_strobe(CC112X_STX);
+
+		sample_count = 0;
+		new_sample = 0;
+		/* Send Flag */
+		for (i = 0; i<PREAMBLE_LENGTH; i++)
+		{
+			aprs_flags.byte = 0x7E;
+			for(j=0; j<8; j++)
+			{
+				aprs_flags.cur_bit = aprs_flags.byte & 0x01;
+
+				// NRZ-I Encoding
+				if (aprs_flags.cur_bit)
+				{
+					// do nothing
+					aprs_flags.one_count++;
+
+				}
+				else
+				{
+					aprs_flags.tone = aprs_flags.tone ^ 1; // switch tone
+					aprs_flags.one_count = 0;
+				}
+
+				aprs_flags.byte = (aprs_flags.byte >> 1);
+
+				while(sample_count < 11)	// wait for symbol to be sent
+				{
+					if ( new_sample )
+					{
+						LUT_lookup();
+						new_sample = 0;
+					}
+				}
+				sample_count = 0;
+				//printf("Symbol: %x\n", aprs_flags.cur_bit);
+
+			}
+		}
+		aprs_flags.one_count = 0;
+
+		/* Send Packet */
 		for (i=0;i<aprs_flags.packet_len;i++)
 		{
 			aprs_flags.byte = APRS_TEST_PACKET[i];
-			for(j=8;j>0;--j)
+			for(j=0; j<8; j++)
 			{
 				aprs_flags.cur_bit = aprs_flags.byte & 0x01;	// bool of first bit
 
@@ -458,13 +501,47 @@ void IRAM_ATTR cc1120_radio_APRSTXPacket(void)
 				//printf("Symbol: %x\n", aprs_flags.cur_bit);
 			}
 		}
-		vTaskDelay(500/portTICK_PERIOD_MS);
+		aprs_flags.one_count = 0;
+
+		/* Send Flag */
+		for (i = 0; i<SUFFIX_LENGTH; i++)
+		{
+			aprs_flags.byte = 0x7E;
+			for(j=0; j<8;j++)
+			{
+				aprs_flags.cur_bit = aprs_flags.byte & 0x01;
+
+				// NRZ-I Encoding
+				if (aprs_flags.cur_bit)
+				{
+					// do nothing
+					aprs_flags.one_count++;
+
+				}
+				else
+				{
+					aprs_flags.tone = aprs_flags.tone ^ 1; // switch tone
+					aprs_flags.one_count = 0;
+				}
+
+				aprs_flags.byte = (aprs_flags.byte >> 1);
+
+				while(sample_count < 11)	// wait for symbol to be sent
+				{
+					if ( new_sample )
+					{
+						LUT_lookup();
+						new_sample = 0;
+					}
+				}
+				sample_count = 0;
+
+			}
+		}
+		cc1120_spi_strobe(CC112X_SIDLE);
+
+		vTaskDelay(10000/portTICK_PERIOD_MS);
 	}
-
-	/* Send CRC */
-
-	/* Send Flag */
-
 }
 
 void cc1120_radio_init(const cc1120_reg_settings_t* rf_settings, uint8_t len)

@@ -12,48 +12,51 @@
 #include <stdint.h>
 #include "cc1120.h"
 
-/* APRS Radio Configuration */
+/* APRS Configuration */
 // Address Config = No address check
-// Bit Rate = 6
+// Bit Rate = 0.825
 // Carrier Frequency = 144.389999
-// Deviation = 5.004883
+// Deviation = 5.004883 (MOVE TO 3kHZ)
 // Device Address = 0
 // Manchester Enable = false
 // Modulation Format = 2-FSK
-// PA Ramping = true
+// PA Ramping = false
 // Packet Bit Length = 0
-// Packet Length = 255
-// Packet Length Mode = Variable
+// Packet Length = 3
+// Packet Length Mode = Not supported
 // Performance Mode = High Performance
-// RX Filter BW = 20.000000
-// Symbol rate = 6
+// RX Filter BW = 15.384615
+// Symbol rate = 0.825
 // TX Power = 15
 // Whitening = false
+
 static const cc1120_reg_settings_t APRS_SETTINGS[]=
 {
-  {CC112X_IOCFG3,            0xB0},
-  {CC112X_IOCFG2,            0x06},
+  {CC112X_IOCFG3,            0x1e},
+  {CC112X_IOCFG2,            0x08},
   {CC112X_IOCFG1,            0xB0},
-  {CC112X_IOCFG0,            0x40},
+  {CC112X_IOCFG0,            0x09},
   {CC112X_SYNC_CFG1,         0x0B},
   {CC112X_DEVIATION_M,       0x48},
   {CC112X_DCFILT_CFG,        0x1C},
-  {CC112X_PREAMBLE_CFG1,     0x18},
+  {CC112X_PREAMBLE_CFG1,     0x00},
   {CC112X_IQIC,              0xC6},
-  {CC112X_CHAN_BW,           0x0A},
+  {CC112X_CHAN_BW,           0x0D},
   {CC112X_MDMCFG0,           0x05},
-  {CC112X_SYMBOL_RATE2,      0x68},
-  {CC112X_SYMBOL_RATE1,      0x93},
-  {CC112X_SYMBOL_RATE0,      0x75},
+  {CC112X_SYMBOL_RATE2,      0x3B},
+  {CC112X_SYMBOL_RATE1,      0x08},
+  {CC112X_SYMBOL_RATE0,      0x9A},
   {CC112X_AGC_REF,           0x20},
   {CC112X_AGC_CS_THR,        0x19},
   {CC112X_AGC_CFG1,          0xA9},
   {CC112X_AGC_CFG0,          0xCF},
   {CC112X_FIFO_CFG,          0x00},
   {CC112X_FS_CFG,            0x1B},
-  {CC112X_PKT_CFG0,          0x20},
+  {CC112X_PKT_CFG2,          0x06},
+  {CC112X_PKT_CFG1,          0x00},
+  {CC112X_PKT_CFG0,          0x40},
+  {CC112X_PA_CFG2,           0x3F},
   {CC112X_PA_CFG0,           0x7E},
-  {CC112X_PKT_LEN,           0xFF},
   {CC112X_IF_MIX_CFG,        0x00},
   {CC112X_FREQOFF_CFG,       0x22},
   {CC112X_CFM_DATA_CFG,      0x01},

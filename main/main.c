@@ -17,7 +17,7 @@ extern uint8_t sample_count;
 
 void IRAM_ATTR app_main()
 {
-	cc1120_radio_init(CW_SETTINGS, sizeof(CW_SETTINGS)/sizeof(cc1120_reg_settings_t));
+	cc1120_radio_init(APRS_SETTINGS, sizeof(APRS_SETTINGS)/sizeof(cc1120_reg_settings_t));
 	vTaskDelay(500/portTICK_PERIOD_MS);
 	cc1120_radio_APRSTXPacket();
 	//xTaskCreatePinnedToCore();
